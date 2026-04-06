@@ -376,64 +376,281 @@ function onSetOption(args: { name: string; value: unknown }): void {
 
 ## Testing
 
-Tests use a Node.js harness (tsx) with mocked bridge APIs.
+Tests run against the **real Rust QuickJS runtime** via JSON-RPC. The test runner automatically builds, starts, and manages the runtime process.
 
-### Test Structure
+### Prerequisites
 
-```typescript
-// src/my-skill/__tests__/test-my-skill.ts
+The test pipeline requires two things to be built before tests can run:
 
-function freshInit(overrides?: Partial<Config>): void {
-  setupSkillTest({
-    stateData: { config: { ...defaultConfig, ...overrides } },
-    fetchResponses: { 'https://api.example.com': { status: 200, body: '{"ok":true}' } },
-  });
-  init();
-}
+```bash
+# 1. Build the Rust runtime binary (openhuman-core)
+yarn core:build
+# Output: openhuman/target/debug/openhuman-core
 
-_describe('My Skill', () => {
-  _it('should initialize', () => {
-    freshInit();
-    _assertNotNull(state.get('config'));
-  });
-
-  _it('should call API', () => {
-    freshInit({ apiKey: 'test' });
-    start();
-    const result = callTool('get-status', {});
-    _assertEqual(result.status, 'ok');
-  });
-});
+# 2. Build compiled skill bundles from TypeScript
+yarn build
+# Output: skills/ directory
 ```
 
-### Test Helpers
+### How Tests Work
 
-```typescript
-setupSkillTest(options?: {
-  stateData?: Record<string, unknown>;
-  fetchResponses?: Record<string, { status: number; body: string }>;
-  env?: Record<string, string>;
-  platformOs?: string;
-});
-
-callTool(name: string, args?: Record<string, unknown>): unknown;
-getMockState(): { state, fetchCalls, notifications, cronSchedules, ... };
-mockFetchResponse(url: string, status: number, body: string): void;
-mockFetchError(url: string, message?: string): void;
+```
+yarn test
+  1. Discovers test files: src/core/**/__tests__/test-*.ts
+  2. Kills any existing process on port 7799
+  3. Spawns: openhuman-core skills run --skills-dir ./skills --port 7799
+  4. Waits for GET /health to return 200 (30s timeout)
+  5. Runs each test file via: npx tsx <test-file>
+  6. Tests communicate with runtime via JSON-RPC POST to http://127.0.0.1:7799/rpc
+  7. Aggregates results and kills runtime on exit
 ```
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all unit tests
 yarn test
 
-# Run specific test
-yarn test src/server-ping/__tests__/test-server-ping.ts
+# Run tests for a specific skill
+yarn test src/core/server-ping/__tests__/test-server-ping.ts
+yarn test server-ping    # shorthand: resolves to src/core/server-ping/__tests__/
 
-# Compile only (for debugging)
-npx tsc -p tsconfig.test.json
+# Run with verbose Rust logging
+RUST_LOG=debug yarn test
+
+# Run live integration scripts (require JWT_TOKEN)
+JWT_TOKEN=<jwt> npx tsx src/core/gmail/live-test.ts
+JWT_TOKEN=<jwt> npx tsx src/core/notion/live-test.ts
 ```
+
+### Test Types
+
+**Unit tests** (`src/core/<skill>/__tests__/test-<skill>.ts`):
+
+- Run against the real runtime but don't require external credentials
+- Test lifecycle (start/stop), setup flow, tool execution, DB operations
+- Discovered automatically by `yarn test`
+
+**Live integration scripts** (`src/core/<skill>/live-test.ts`):
+
+- Run the full skill lifecycle with real API credentials
+- Require `JWT_TOKEN` env var and optionally `BACKEND_URL`
+- **Not** picked up by `yarn test` — must be run manually
+- Support both OAuth and self-hosted auth modes
+
+### Writing a Unit Test
+
+```typescript
+// src/core/my-skill/__tests__/test-my-skill.ts
+import {
+  afterAll,
+  assertContains,
+  assertEqual,
+  assertNotNull,
+  beforeAll,
+  callTool,
+  describe,
+  getSkillStatus,
+  it,
+  run,
+  setupStart,
+  setupSubmit,
+  startSkill,
+  stopSkill,
+} from '../../../../dev/test-harness';
+
+const SKILL_ID = 'my-skill';
+
+describe('Lifecycle', () => {
+  it('should start successfully', async () => {
+    const snap = await startSkill(SKILL_ID);
+    assertEqual(snap.status, 'running');
+  });
+
+  afterAll(async () => {
+    try {
+      await stopSkill(SKILL_ID);
+    } catch {}
+  });
+});
+
+describe('Tools', () => {
+  beforeAll(async () => {
+    try {
+      await stopSkill(SKILL_ID);
+    } catch {}
+    await startSkill(SKILL_ID);
+  });
+
+  it('should return data from tool', async () => {
+    const result = (await callTool(SKILL_ID, 'get-status')) as any;
+    assertNotNull(result);
+  });
+
+  afterAll(async () => {
+    try {
+      await stopSkill(SKILL_ID);
+    } catch {}
+  });
+});
+
+run(); // Required: executes all suites and exits
+```
+
+### Test Harness API (`dev/test-harness/index.ts`)
+
+**Skill lifecycle:**
+
+| Function                                            | Purpose                                       |
+| --------------------------------------------------- | --------------------------------------------- |
+| `startSkill(skillId)`                               | Start skill, returns snapshot (status, tools) |
+| `stopSkill(skillId)`                                | Stop a running skill                          |
+| `getSkillStatus(skillId)`                           | Get current state and tool list               |
+| `callTool(skillId, toolName, args?)`                | Execute tool, returns parsed JSON result      |
+| `callToolRaw(skillId, toolName, args?, timeoutMs?)` | Raw result with `is_error` + `content`        |
+
+**Setup and auth:**
+
+| Function                                                | Purpose                                |
+| ------------------------------------------------------- | -------------------------------------- |
+| `setupStart(skillId)`                                   | Begin setup wizard, returns first step |
+| `setupSubmit(skillId, stepId, values)`                  | Submit a setup step                    |
+| `setSetupComplete(skillId, complete)`                   | Mark setup as done                     |
+| `oauthComplete(skillId, {credentialId, provider, ...})` | Complete managed OAuth flow            |
+| `authComplete(skillId, mode, credentials)`              | Complete self-hosted auth              |
+
+**Assertions:** `assert`, `assertEqual`, `assertNotNull`, `assertContains`, `assertGreaterThan`, `assertDeepEqual`, `assertThrows`, `assertMatch`, `assertArrayLength`
+
+**Test structure:** `describe`, `it`, `beforeAll`, `afterAll`, `beforeEach`, `afterEach`, `run`
+
+### Test Guidelines
+
+- Tests that need a reachable URL should use `http://localhost:7799` (the running test runtime) rather than external domains
+- Always stop skills in `afterAll` blocks to avoid leaking state between suites
+- Tool calls default to 15s timeout; pass a higher value for slow operations: `callToolRaw(id, tool, args, 30000)`
+- Test files must call `run()` at the end to execute suites and set exit code
+
+### Rust Runtime Submodule
+
+The Rust host binary lives in the `openhuman/` git submodule. To work with it:
+
+```bash
+# Build the debug binary
+yarn core:build
+# or: cargo build --manifest-path openhuman/Cargo.toml --bin openhuman-core
+
+# Run the runtime manually (interactive, for debugging)
+yarn dev:runtime
+# or: yarn core:run
+
+# Run with custom port
+node scripts/dev-runtime.mjs --port 8080
+
+# List discovered skills
+yarn core:list
+
+# Verbose Rust logging
+RUST_LOG=debug yarn dev:runtime
+RUST_LOG=trace yarn dev:runtime    # very verbose
+```
+
+The runtime exposes these HTTP endpoints on `http://127.0.0.1:7799`:
+
+| Endpoint  | Method | Purpose                       |
+| --------- | ------ | ----------------------------- |
+| `/health` | GET    | Health check (200 when ready) |
+| `/rpc`    | POST   | JSON-RPC 2.0 dispatch         |
+| `/skills` | GET    | List running skills           |
+| `/tools`  | GET    | List all tools across skills  |
+
+### Manual Testing with curl
+
+You can poke the runtime directly for debugging:
+
+```bash
+# Start runtime in one terminal
+yarn dev:runtime
+
+# Health check
+curl http://127.0.0.1:7799/health
+
+# List all skills
+curl http://127.0.0.1:7799/skills
+
+# List all tools
+curl http://127.0.0.1:7799/tools
+
+# Start a skill via JSON-RPC
+curl -X POST http://127.0.0.1:7799/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"openhuman.skills_start","params":{"skill_id":"server-ping"}}'
+
+# Call a tool via JSON-RPC
+curl -X POST http://127.0.0.1:7799/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"openhuman.skills_call_tool","params":{"skill_id":"server-ping","tool_name":"get-ping-stats","args":{}}}'
+
+# Get skill status
+curl -X POST http://127.0.0.1:7799/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"openhuman.skills_status","params":{"skill_id":"server-ping"}}'
+
+# Stop a skill
+curl -X POST http://127.0.0.1:7799/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"openhuman.skills_stop","params":{"skill_id":"server-ping"}}'
+
+# Trigger sync (for skills with sync support)
+curl -X POST http://127.0.0.1:7799/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":5,"method":"openhuman.skills_sync","params":{"skill_id":"notion"}}'
+```
+
+### Interactive REPL
+
+For interactive exploration of the runtime:
+
+```bash
+yarn repl
+# Connects to http://127.0.0.1:7799 and provides an interactive prompt
+# to call RPC methods, inspect skills, and test tools
+```
+
+### Environment Variables
+
+Create a `.env` file in the repo root (see `.env.example`):
+
+```bash
+# Required for live integration scripts
+JWT_TOKEN=<session-jwt-from-backend>
+BACKEND_URL=https://api.tinyhumans.ai    # or staging URL
+
+# OAuth credentials (for live tests)
+NOTION_INTEGRATION_ID=<24-char-hex>
+NOTION_CLIENT_KEY_SHARE=<base64>
+GMAIL_INTEGRATION_ID=<24-char-hex>
+GMAIL_CLIENT_KEY_SHARE=<base64>
+
+# Self-hosted auth (alternative to OAuth)
+AUTH_MODE=self_hosted
+GMAIL_CLIENT_ID=<google-client-id>
+GMAIL_CLIENT_SECRET=<google-client-secret>
+GMAIL_REFRESH_TOKEN=<refresh-token>
+NOTION_API_KEY=<ntn_...>
+```
+
+The dev runtime (`yarn dev:runtime`) automatically loads `.env`. The test runner passes `process.env` through, so export vars or use `dotenv` in test scripts.
+
+### Troubleshooting
+
+| Problem                                    | Fix                                                                                |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| "openhuman-core binary not found"          | Run `yarn core:build`                                                              |
+| "compiled skills not found"                | Run `yarn build`                                                                   |
+| "Runtime failed to start within 30s"       | Run `RUST_LOG=debug yarn test` to see startup errors                               |
+| "Port 7799 already in use"                 | Run `lsof -ti:7799 \| xargs kill -9`                                               |
+| Tool call timeout                          | Increase timeout: `callToolRaw(id, tool, args, 30000)`                             |
+| Setup test fails with "error" on valid URL | The setup may validate reachability; use `http://localhost:7799` as the target URL |
 
 ## Creating a New Skill
 
