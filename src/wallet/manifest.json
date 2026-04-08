@@ -1,9 +1,0 @@
-{
-  "id": "wallet",
-  "name": "Web3 Wallet",
-  "ignoreInProduction": true,
-  "version": "1.0.0",
-  "description": "Web3 wallet connector — manage EVM wallets using addresses from the app. Check balances, list wallets and networks. Wallet address is derived from your mnemonic in the frontend.",
-  "auto_start": false,
-  "setup": { "required": true, "label": "Connect Wallet" }
-}

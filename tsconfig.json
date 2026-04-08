@@ -19,9 +19,9 @@
   "include": [
     "types/**/*.d.ts",
     "src/types.d.ts",
-    "src/*/index.ts",
+    "src/core/*/index.ts",
     "examples/*/index.ts",
     "src/**/*.ts"
   ],
-  "exclude": ["node_modules", ".venv", "dev", "**/__tests__/**"]
+  "exclude": ["node_modules", ".venv", "dev", "**/__tests__/**", "src/old"]
 }

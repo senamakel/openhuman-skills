@@ -14,8 +14,8 @@ const root = join(__dirname, '..');
 
 let count = 0;
 
-// Process built skills from src/ -> skills/
-const srcDir = join(root, 'src');
+// Process built skills from src/core/ -> skills/
+const srcDir = join(root, 'src', 'core');
 const skillsOutputDir = join(root, 'skills');
 
 if (existsSync(srcDir) && existsSync(skillsOutputDir)) {

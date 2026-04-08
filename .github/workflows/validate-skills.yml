@@ -12,18 +12,20 @@ jobs:
   validate:
     name: Validate, Build & Test
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/tinyhumansai/openhuman_ci:rust-1.93.0
 
     steps:
-      - name: Checkout
+      - name: Checkout (with submodules)
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'yarn'
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: apt-get update -qq && apt-get install -y --no-install-recommends cmake pkg-config libssl-dev
+
+      - name: Install Node dependencies
         run: yarn install --frozen-lockfile
 
       - name: Type-check
@@ -38,8 +40,28 @@ jobs:
       - name: Validate skills
         run: yarn validate
 
-      - name: Build
+      - name: Build skills
         run: yarn build
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            openhuman/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-ci-${{ hashFiles('openhuman/Cargo.lock') }}
+          restore-keys: rust-ci-
+
+      - name: Build openhuman-core (skills runtime)
+        run: cargo build --manifest-path openhuman/Cargo.toml --profile ci --bin openhuman-core
+        env:
+          CARGO_INCREMENTAL: '0'
+
+      - name: Copy CI binary for test runner
+        run: |
+          mkdir -p openhuman/target/debug
+          cp openhuman/target/ci/openhuman-core openhuman/target/debug/openhuman-core
 
       - name: Run tests
         run: yarn test

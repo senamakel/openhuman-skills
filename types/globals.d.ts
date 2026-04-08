@@ -22,7 +22,7 @@ declare const db: {
 /** HTTP networking. */
 declare const net: {
   /** Synchronous HTTP fetch. Returns the parsed response. */
-  fetch(url: string, options?: NetFetchOptions): Promise<NetFetchResponse>;
+  fetch(url: string, options?: NetFetchOptions): NetFetchResponse;
 };
 
 /** Cron scheduling. */
@@ -103,7 +103,7 @@ declare const oauth: {
    * Server attaches the OAuth access_token and forwards to the provider API.
    * Path is relative to manifest's apiBaseUrl.
    */
-  fetch(path: string, options?: OAuthFetchOptions): Promise<OAuthFetchResponse>;
+  fetch(path: string, options?: OAuthFetchOptions): OAuthFetchResponse;
 
   /** Revoke the current OAuth credential server-side. */
   revoke(): boolean;
@@ -136,7 +136,7 @@ declare const auth: {
    * For managed: delegates to oauth.fetch.
    * For text: no auto-injection (skill should handle manually).
    */
-  fetch(url: string, options?: OAuthFetchOptions): Promise<OAuthFetchResponse>;
+  fetch(url: string, options?: OAuthFetchOptions): OAuthFetchResponse;
 };
 
 /** Memory insertion bridge (persists through native memory client). */
@@ -156,72 +156,6 @@ declare const memory: {
   /** Insert skill-scoped memory payload to backend. */
   insert(params: MemoryInsertParams): boolean;
 };
-
-/** AI model API (routes to cloud backend). */
-declare const model: {
-  /**
-   * Generate text from a prompt via the backend API.
-   * @param prompt - Input prompt
-   * @param options - Generation options
-   * @returns Generated text
-   */
-  generate(prompt: string, options?: ModelGenerateOptions): string;
-
-  /**
-   * Summarize text via the backend API.
-   * @param text - Text to summarize
-   * @param options - Summarize options
-   * @returns Summary text
-   */
-  summarize(text: string, options?: ModelSummarizeOptions): string;
-};
-
-/** Authenticated backend API client. */
-declare const backend: {
-  /** Backend API URL. */
-  readonly url: string;
-  /** Current JWT auth token. */
-  readonly token: string;
-  /** Make an authenticated HTTP request to the backend. */
-  fetch(path: string, options?: NetFetchOptions): NetFetchResponse;
-  /**
-   * Submit data chunks to the backend for processing (summarization).
-   * Resolves when the submit completes successfully; reject on failure so callers
-   * can avoid marking items as submitted until the backend has accepted the data.
-   * @param chunks - Data chunks (max 500, each content max 1MB).
-   * @param options - Data source identifier and optional metadata.
-   */
-  submitData(chunks: DataSubmissionChunk[], options?: DataSubmissionOptions): Promise<void>;
-};
-
-interface ModelGenerateOptions {
-  maxTokens?: number;
-  temperature?: number;
-}
-
-interface ModelSummarizeOptions {
-  maxTokens?: number;
-}
-
-interface DataSubmissionEntity {
-  name: string;
-  identifier: string;
-  kind: string;
-}
-
-interface DataSubmissionChunk {
-  title?: string;
-  content: string;
-  rawContent?: string;
-  labels?: string[];
-  entities?: DataSubmissionEntity[];
-  metadata?: Record<string, unknown>;
-}
-
-interface DataSubmissionOptions {
-  dataSource?: string;
-  metadata?: Record<string, unknown>;
-}
 
 // ---------------------------------------------------------------------------
 // Tools (assigned by skills on globalThis)
@@ -283,7 +217,7 @@ interface ToolDefinition {
   name: string;
   description: string;
   input_schema: ToolInputSchema;
-  execute: (args: Record<string, unknown>) => Promise<string>;
+  execute: (args: Record<string, unknown>) => string;
 }
 
 interface ToolInputSchema {

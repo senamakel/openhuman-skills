@@ -12,6 +12,6 @@
     "noUnusedParameters": false,
     "skipLibCheck": true
   },
-  "include": ["types/**/*.d.ts", "src/types.d.ts", "src/*/index.ts"],
-  "exclude": ["node_modules", ".venv"]
+  "include": ["types/**/*.d.ts", "src/types.d.ts", "src/core/*/index.ts"],
+  "exclude": ["node_modules", ".venv", "src/old"]
 }

@@ -15,9 +15,8 @@
     "build:watch": "node scripts/watch-build.mjs",
     "watch": "npm run build:watch",
     "typecheck": "tsc --noEmit",
-    "test": "bash scripts/test-js.sh",
-    "test:script": "tsx dev/test-harness/runner-node.ts",
-    "test:live": "tsx dev/test-harness/live-runner-node.ts",
+    "test": "node scripts/test-runner.mjs",
+    "test:skill": "node scripts/test-runner.mjs",
     "repl": "tsx dev/test-harness/repl-node.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -25,7 +24,13 @@
     "validate:secrets": "node scripts/scan-secrets.mjs",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
-    "prepare": "husky"
+    "prepare": "husky",
+    "core:build": "cargo build --manifest-path openhuman/Cargo.toml --bin openhuman-core",
+    "dev:runtime": "(cd openhuman && cargo build) && node scripts/dev-runtime.mjs",
+    "core:run": "cargo run --manifest-path openhuman/Cargo.toml --bin openhuman-core -- skills run --skills-dir ./skills",
+    "core:list": "cargo run --manifest-path openhuman/Cargo.toml --bin openhuman-core -- skills list --skills-dir ./skills",
+    "core:test": "cargo run --manifest-path openhuman/Cargo.toml --bin openhuman-core -- skills test --skills-dir ./skills",
+    "core:call": "cargo run --manifest-path openhuman/Cargo.toml --bin openhuman-core -- skills call --skills-dir ./skills"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
@@ -48,6 +53,7 @@
     "prettier": "^3.4.2",
     "rimraf": "^6.1.2",
     "socket.io-client": "^4.8.3",
+    "ts-node": "^10.9.2",
     "tsx": "^4.19.0",
     "typescript": "~5.8.3",
     "ws": "^8.18.0"

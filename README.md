@@ -1,108 +1,99 @@
-<p align="center">
-  <img src="https://openhumanxyz.github.io/openhuman/icon.png" alt="OpenHuman" width="80" />
-</p>
+# OpenHuman Skills
 
-<h1 align="center">OpenHuman</h1>
+This repository is the **canonical skills registry** for [OpenHuman](https://github.com/tinyhumansai/openhuman): TypeScript packages that extend the desktop agent with tools, integrations, and background behavior. Skills are authored here, built into JavaScript bundles, and loaded by the OpenHuman core inside a **sandboxed QuickJS** runtime.
 
-<p align="center">
-  <strong>A personal AI assistant that cuts through communication noise so you never miss what matters</strong>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/status-early%20beta-orange" alt="Early Beta" />
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-blue" alt="Platforms" />
-  <a href="https://github.com/tinyhumansai/openhuman/releases/latest"><img src="https://img.shields.io/github/v/release/openhumanxyz/openhuman?label=latest" alt="Latest Release" /></a>
-</p>
+The **OpenHuman application** (Tauri + React + Rust) lives in the main [`openhuman`](https://github.com/tinyhumansai/openhuman) repo. This repo holds only skill sources, build tooling, tests, and documentation for skills.
 
 ---
 
-## What is OpenHuman?
+## What skills are
 
-OpenHuman is a personal AI assistant that helps you manage high-volume communication without reading everything yourself. It connects to your messaging platforms and productivity tools, understands conversations in context, and produces clear, actionable outputs you can use immediately.
+A **skill** is a self-contained module that:
 
-OpenHuman is not a chatbot, browser extension, or cloud-only service. It is a native application that runs on your device, connects to your tools, and works only when you ask it to. Think of it as a second brain that sits across your communication and productivity stack.
+- Declares **metadata** in `manifest.json` (id, version, description, setup, platforms, optional auth).
+- Exposes **tools** the AI can call (each returns a JSON string).
+- Implements **lifecycle hooks** such as `init`, `start`, `stop`, optional setup wizards, and cron handlers.
+- Uses **bridge APIs** provided by the host: SQLite (`db`), HTTP (`net`), persistent state (`state`), files (`data`), scheduling (`cron`), notifications (`platform`), optional local model (`model`), and more.
 
-## What It Does
+Execution is **synchronous** (no `async`/`await` in skill code). Networking uses `net.fetch` with timeouts. Each skill gets an isolated SQLite database and storage; credentials belong in setup flows or environment, never hardcoded.
 
-- **Summarize conversations** -- Understand what happened without reading everything
-- **Surface signals** -- Decisions, action items, risks, and sentiment shifts extracted automatically
-- **Generate responses** -- Context-aware reply suggestions informed by conversation history
-- **Create workflows** -- Turn unstructured commitments into trackable actions
-- **Export intelligence** -- Push summaries, action items, and structured data to Notion, Google Sheets, and connected tools
-- **Run automations** -- Via a sandboxed skills engine that extends the platform without app updates
+See **[`docs/SKILLS.md`](docs/SKILLS.md)** for a full overview and **[`docs/SKILL_SPEC.md`](docs/SKILL_SPEC.md)** for integration checklists and file layout conventions.
 
-## Download
+## Repository layout
 
-> **Early Beta** -- OpenHuman is under active development. Expect rough edges.
+| Path                                     | Purpose                                                                                                                 |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [`src/core/<skill-id>/`](src/core/)      | One directory per shipped skill (`index.ts`, `manifest.json`, optional `tools/`, `api/`, `db/`, `__tests__/`, etc.)     |
+| [`src/helpers/`](src/helpers/)           | Shared helpers imported by skills                                                                                       |
+| [`src/shared/`](src/shared/)             | Shared cross-skill metadata utilities                                                                                   |
+| [`types/`](types/)                       | Ambient types for bridge APIs (e.g. globals used by skills)                                                             |
+| [`scripts/`](scripts/)                   | Install per-skill deps, TypeScript compile, esbuild bundle, strip exports, registry generation, validation, secret scan |
+| [`dev/test-harness/`](dev/test-harness/) | Node test harness, REPL, and mocks for local development                                                                |
+| [`docs/`](docs/)                         | Long-form guides (`SKILLS.md`, `SKILL_SPEC.md`, …)                                                                      |
+| `skills/`                                | **Build output** (generated; gitignored) — bundled JS + `manifest.json` per skill                                       |
+| `skills-ts-out/`                         | Intermediate TypeScript emit (gitignored)                                                                               |
+| [`openhuman/`](openhuman/)               | Optional **git submodule** to the main OpenHuman app for local end-to-end work                                          |
 
-### macOS
+A typical skill directory (larger skills split into modules):
 
-| Chip                        | Download                                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Apple Silicon (M1/M2/M3/M4) | [`.dmg` (aarch64)](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_aarch64.dmg) |
-| Intel                       | [`.dmg` (x64)](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_x64.dmg)         |
+```text
+src/core/<skill-id>/
+├── manifest.json
+├── index.ts              # Lifecycle + wiring
+├── types.ts              # Types for this skill
+├── state.ts              # Optional globalThis state pattern
+├── setup.ts              # Optional setup wizard
+├── tools/
+│   ├── index.ts          # Barrel export
+│   └── <tool>.ts         # One file per tool or group
+├── db/                   # Optional schema + helpers
+├── api/                  # Optional HTTP/API layer
+└── __tests__/
+    └── test-<skill>.ts
+```
 
-### Windows
+## Build and quality commands
 
-| Architecture | Download                                                                                             |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| x64          | [`.msi`](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_x64_en-US.msi) |
+Prerequisites: **Node.js 22+** and **Yarn**.
 
-### Linux
+```bash
+yarn install
+yarn build          # clean, per-skill deps, tsc, bundle, strip, registry
+yarn typecheck
+yarn test           # smoke tests on built skills
+yarn validate       # manifest, secrets, and quality checks
+yarn validate:secrets
+yarn lint
+```
 
-| Format          | Download                                                                                                   |
-| --------------- | ---------------------------------------------------------------------------------------------------------- |
-| Debian / Ubuntu | [`.deb` (amd64)](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_amd64.deb)   |
-| Fedora / RHEL   | [`.rpm` (x86_64)](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_x86_64.rpm) |
-| Universal       | [`.AppImage`](https://github.com/tinyhumansai/openhuman/releases/latest/download/OpenHuman_amd64.AppImage) |
+Development:
 
-### Mobile
-
-- **Android** and **iOS** -- Coming soon
-
-Browse all releases: [github.com/openhumanxyz/openhuman/releases](https://github.com/tinyhumansai/openhuman/releases)
-
-## Skills
-
-OpenHuman uses a pluggable **skills** architecture. Each skill connects to an external service, syncs relevant data locally, and exposes tools that you (or the AI) can use. Skills run in a sandboxed environment with their own database, storage, and permissions.
-
-| Skill           | Status      | Description                                                   |
-| --------------- | ----------- | ------------------------------------------------------------- |
-| Telegram        | Available   | Chats, messages, contacts, search, admin tools, AI summaries  |
-| Notion          | Available   | Pages, databases, blocks, users, comments, search, local sync |
-| Gmail           | In Progress | Email management, labels, search, send/receive with OAuth2    |
-| Google Calendar | In Progress | Calendars, events, scheduling with OAuth2                     |
-| Google Drive    | In Progress | Files, Sheets, Docs with OAuth2                               |
-| Slack           | In Progress | Messages, channels, real-time events                          |
-| Web3 Wallets    | Planned     | EVM wallet management, balance checks, network monitoring     |
-
-## Privacy-First
-
-- **Zero retention** -- Message content is processed to produce output, then discarded
-- **OS-level credential storage** -- Desktop platforms use native keychains (macOS Keychain, Windows Credential Manager)
-- **No training on your data** -- Your data is never used for model improvement
-- **Request-only processing** -- Nothing happens without an explicit user action; no background scanning
-- **Sandboxed skills** -- Each skill runs in isolation with memory and resource limits
-
-## Getting Started
-
-1. **Download** the installer for your platform from the [releases page](https://github.com/tinyhumansai/openhuman/releases/latest)
-2. **Install** the app (drag to Applications on macOS, or use your package manager on Linux)
-3. **Connect a source** -- follow the in-app onboarding to link Telegram, Notion, Gmail, or other services
-4. **Run your first request** -- ask the AI to summarize what you missed, extract action items, or surface key decisions
-
-## Links
-
-- [Architecture Overview](./ARCHITECTURE.md) -- How OpenHuman is built
-- [Changelog](./CHANGELOG.md) -- Release history
-- [Website](https://openhuman.xyz) -- Learn more
+```bash
+yarn build:watch    # incremental rebuilds
+yarn repl           # interactive harness (see dev/test-harness)
+```
 
 ---
 
-<p align="center">
-  Made with love by a bunch of Web3 nerds
-</p>
+## Skills in this tree
 
-<p align="center">
-  <sub>OpenHuman is in early beta. Features may change, break, or disappear. Use at your own risk.</sub>
-</p>
+| Skill                                  | Description                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [`server-ping`](src/core/server-ping/) | Reference/demo skill (health ping, DB, state, cron, tools). Marked dev-oriented in manifest. |
+| [`notion`](src/core/notion/)           | Notion workspace integration (pages, databases, blocks, search, sync).                       |
+| [`gmail`](src/core/gmail/)             | Gmail integration (OAuth, mail tools).                                                       |
+
+The desktop app’s default catalog can point at this GitHub repo; override with `VITE_SKILLS_GITHUB_REPO` when developing locally (see OpenHuman app docs).
+
+---
+
+## Contributing
+
+We welcome new skills, fixes to existing ones, tests, and tooling improvements.
+
+1. **Read [`CONTRIBUTING.md`](CONTRIBUTING.md)** — branching (`feat/`, `fix/`, …), naming (`lowercase-hyphens` skill ids), code expectations (sync code, JSON tool results, no secrets), and PR expectations.
+2. **Use the docs** — [`docs/SKILL_SPEC.md`](docs/SKILL_SPEC.md) for scaffolding checklists; [`docs/SKILLS.md`](docs/SKILLS.md) for bridge APIs and workflows.
+3. **Place new skills under `src/core/<skill-id>/`** and ensure `yarn typecheck`, `yarn build`, `yarn validate`, and `yarn test` pass before opening a PR.
+4. **Issues and PRs** — Use [tinyhumansai/openhuman-skills](https://github.com/tinyhumansai/openhuman-skills) on GitHub; follow the PR template in [`.github/`](.github/).
+
+If you need the full desktop stack locally, clone the main OpenHuman repo and use the `openhuman` submodule here, or clone both apps side by side and point the app at your skills build.

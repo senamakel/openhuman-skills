@@ -10,7 +10,7 @@ import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
-const srcDir = join(rootDir, 'src');
+const srcDir = join(rootDir, 'src', 'core');
 
 const colors = {
   green: '\x1b[32m',

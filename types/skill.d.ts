@@ -1,3 +1,6 @@
+/** Accepts both sync and async — skills should prefer sync. */
+type MaybeAsync<T> = T | Promise<T>;
+
 interface Skill {
   info: {
     id: string;
@@ -8,47 +11,44 @@ interface Skill {
     setup: { required: boolean; label: string };
   };
   tools: ToolDefinition[];
-  init: () => Promise<void>;
-  start: () => Promise<void>;
-  stop: () => Promise<void>;
-  onCronTrigger?: (scheduleId: string) => Promise<void>;
-  onSetupStart?: () => Promise<SetupStartResult>;
+  init: () => MaybeAsync<void>;
+  start: () => MaybeAsync<void>;
+  stop: () => MaybeAsync<void>;
+  onCronTrigger?: (scheduleId: string) => MaybeAsync<void>;
+  onSetupStart?: () => MaybeAsync<SetupStartResult>;
   onSetupSubmit?: (args: {
     stepId: string;
     values: Record<string, unknown>;
-  }) => Promise<SetupSubmitResult>;
-  onSetupCancel?: () => Promise<void>;
-  onOAuthComplete?: (args: OAuthCompleteArgs) => Promise<unknown>;
+  }) => MaybeAsync<SetupSubmitResult>;
+  onSetupCancel?: () => MaybeAsync<void>;
+  onOAuthComplete?: (args: OAuthCompleteArgs) => MaybeAsync<unknown>;
   /** Called when advanced auth credentials are submitted (self_hosted / text modes). */
   onAuthComplete?: (args: {
     mode: string;
     credentials: Record<string, unknown>;
-  }) => Promise<{
+  }) => MaybeAsync<{
     status: string;
     errors?: Array<{ field: string; message: string }>;
     message?: string;
   }>;
   /** Called when advanced auth credentials are revoked. */
-  onAuthRevoked?: (args: { mode?: string }) => Promise<void>;
-  onDisconnect?: () => Promise<void>;
-  publishState?: () => Promise<void>;
-  onOAuthRevoked?: (args: OAuthRevokedArgs) => Promise<void>;
-  onListOptions?: () => Promise<{ options: SkillOption[] }>;
-  onSetOption?: (args: { name: string; value: unknown }) => Promise<void>;
-  onSessionStart?: (args: { sessionId: string }) => Promise<void>;
-  onSessionEnd?: (args: { sessionId: string }) => Promise<void>;
-  onTick?: () => Promise<void>;
-  onSync?: () => Promise<void>;
-  onPing?: () => Promise<PingResult>;
+  onAuthRevoked?: (args: { mode?: string }) => MaybeAsync<void>;
+  onDisconnect?: () => MaybeAsync<void>;
+  publishState?: () => MaybeAsync<void>;
+  onOAuthRevoked?: (args: OAuthRevokedArgs) => MaybeAsync<void>;
+  onListOptions?: () => MaybeAsync<{ options: SkillOption[] }>;
+  onSetOption?: (args: { name: string; value: unknown }) => MaybeAsync<void>;
+  onSessionStart?: (args: { sessionId: string }) => MaybeAsync<void>;
+  onSessionEnd?: (args: { sessionId: string }) => MaybeAsync<void>;
+  onTick?: () => MaybeAsync<void>;
+  onSync?: () => MaybeAsync<void>;
+  onPing?: () => MaybeAsync<PingResult>;
   /** Called when the frontend sends load params (e.g. wallet address for wallet skill). */
-  onLoad?: (params: Record<string, unknown>) => Promise<void>;
+  onLoad?: (params: Record<string, unknown>) => MaybeAsync<void>;
   onRpc?: (args: { method: string; params: unknown }) => unknown;
-  onServerEvent?: (event: string, data: unknown) => Promise<void>;
-  onDisconnect?: () => Promise<void>;
+  onServerEvent?: (event: string, data: unknown) => MaybeAsync<void>;
   /**
-   * Called when an unhandled error occurs during async operations
-   * (e.g. network errors, promise rejections).
-   * Skills should use this to update their state and surface the error to the user.
+   * Called when an unhandled error occurs during async operations.
    */
-  onError?: (args: SkillErrorArgs) => Promise<void>;
+  onError?: (args: SkillErrorArgs) => MaybeAsync<void>;
 }

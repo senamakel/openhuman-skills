@@ -16,7 +16,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
-const srcDir = join(rootDir, 'src');
+const srcDir = join(rootDir, 'src', 'core');
 
 const colors = {
   red: '\x1b[31m',

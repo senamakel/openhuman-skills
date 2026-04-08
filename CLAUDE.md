@@ -142,12 +142,6 @@ yarn test src/server-ping/__tests__/test-server-ping.ts
 # Lint and format
 yarn lint
 yarn format:check
-
-# Download local model for inference testing
-yarn model:download
-
-# Run test script with real local model
-yarn test:model <skill-id> <script-file>
 ```
 
 ## Bridge APIs
@@ -163,7 +157,6 @@ Skills have access to these global namespaces (defined in `types/globals.d.ts`):
 | `platform` | OS info, env vars, notifications                    |
 | `state`    | Persistent key-value store + real-time frontend pub |
 | `data`     | File I/O in skill's data directory                  |
-| `model`    | Local LLM inference (generate, summarize)           |
 
 ### Database (`db`)
 
@@ -214,24 +207,6 @@ const keys = state.keys(); // List all persisted keys
 ```typescript
 data.write('config.json', JSON.stringify(config, null, 2));
 const content = data.read('config.json'); // null if not found
-```
-
-### Model (`model`)
-
-```typescript
-// Check if a local model is available
-const available = model.isAvailable();
-const status = model.getStatus(); // { available, loaded, loading, downloaded, error? }
-
-// Generate text from a prompt
-const response = model.generate('What is Bitcoin?', {
-  maxTokens: 200, // default: 2048
-  temperature: 0.7, // default: 0.7
-  topP: 0.9, // default: 0.9
-});
-
-// Summarize a block of text
-const summary = model.summarize(longText, { maxTokens: 100 });
 ```
 
 ### Platform (`platform`)
@@ -496,13 +471,34 @@ See [`src/telegram/`](src/telegram/) for the reference implementation demonstrat
 
 - **TypeScript only** — Skills are TypeScript compiled to JavaScript
 - **QuickJS runtime** — Sandboxed JS environment with bridge APIs
-- **Synchronous execution** — No async/await; `net.fetch()` is sync with timeout
+- **ES2019 target** — esbuild bundles with `target: 'es2019'`. **Do NOT use optional chaining (`?.`) or nullish coalescing (`??`) in skill code** — QuickJS does not support them and they will crash the event loop silently. Use ternary/`||` instead: `x ? x.y : null` not `x?.y`, `x !== null && x !== undefined ? x : fallback` not `x ?? fallback`.
 - **JSON string results** — Tool execute functions must return JSON strings
+- **No raw text in published state** — `state.setPartial()` values pass through JSON-RPC transport. Raw text content (page bodies, email bodies) with newlines or special characters will break the JSON envelope. Only publish metadata (id, title, date) — never `content_text` or `body_text`.
+- **Tool logging** — All tools should be wrapped with `withLogging()` in `tools/index.ts`. This logs entry (tool name + args), exit (timing + result size), and errors for every call. See Notion or Gmail tools for the pattern.
+- **Sync is fire-and-forget** — The Rust event loop's `skill/sync` RPC starts `onSync()` as a background task and returns immediately. Sync progress should be published via `state.setPartial()` with `syncPhase`, `syncProgress` (0-100), and `syncMessage` fields. The `sync-status` tool exposes these to callers.
+- **MIN_CONTENT_LENGTH for ingestion** — When calling `memory.insert()`, skip content shorter than 50 characters. Very short strings crash the embedding model (ONNX/CoreML shape {0}).
 - **6-field cron** — Cron includes seconds: `sec min hour day month dow`
 - **SQL params required** — Always use `?` placeholders, never interpolation
 - **No underscores in skill names** — Use lowercase-hyphens (e.g., `my-skill`)
 - **Isolated data** — Skills cannot access other skills' databases or files
 - **Globals via globalThis** — Tools must access shared state via `globalThis.getSkillState()`, not bare variable names (see Skill State Management pattern)
+
+## OAuth Proxy
+
+Skills using OAuth (managed mode) make API calls via `oauth.fetch()`, which proxies through the backend at `/proxy/encrypted/:integrationId/:path`. The backend proxy sets provider-specific headers (e.g. `Notion-Version`). For the Notion skill, the API version is hardcoded to `2026-03-11` in `notionFetch()` via the `NOTION_API_VERSION` constant — skills cannot override it through headers. The `X-Encryption-Key` header carries the client key share for token decryption. JWT for auth comes from `__ops.get_session_token()` (reads on-disk credential store, falls back to `JWT_TOKEN` env var).
+
+### Test Harness RPC Methods
+
+The Rust event loop matches these exact RPC method strings — use them in test harness calls:
+
+| Method           | What it does                                  |
+| ---------------- | --------------------------------------------- |
+| `oauth/complete` | Inject OAuth credential + client key share    |
+| `auth/complete`  | Inject self-hosted credential with validation |
+| `skill/sync`     | Fire-and-forget background sync               |
+| `skill/ping`     | Health check                                  |
+| `oauth/revoked`  | Clear OAuth credential                        |
+| `auth/revoked`   | Clear auth credential                         |
 
 ## Build Process
 
@@ -783,7 +779,7 @@ Initial data sync and periodic refresh:
 // sync.ts
 export function performInitialSync(onProgress?: (msg: string) => void): void {
   const s = globalThis.getMySkillState();
-  onProgress?.('Fetching items...');
+  if (onProgress) onProgress('Fetching items...');
 
   let cursor: string | undefined;
   let totalSynced = 0;
@@ -794,7 +790,7 @@ export function performInitialSync(onProgress?: (msg: string) => void): void {
       totalSynced++;
     }
     cursor = result.nextCursor;
-    onProgress?.(`Synced ${totalSynced} items...`);
+    if (onProgress) onProgress(`Synced ${totalSynced} items...`);
   } while (cursor);
 
   db.exec(`INSERT OR REPLACE INTO sync_state (key, value) VALUES ('last_sync', ?)`, [
@@ -896,8 +892,14 @@ function publishState(): void {
   state.setPartial({
     connection_status: s.isRunning ? 'connected' : 'disconnected',
     is_initialized: true,
-    lastSync: db.get("SELECT value FROM sync_state WHERE key = 'last_sync'", [])?.value ?? null,
-    itemCount: (db.get('SELECT COUNT(*) as count FROM items', []) as { count: number })?.count ?? 0,
+    lastSync: (() => {
+      const row = db.get("SELECT value FROM sync_state WHERE key = 'last_sync'", []);
+      return row ? row.value : null;
+    })(),
+    itemCount: (() => {
+      const row = db.get('SELECT COUNT(*) as count FROM items', []) as { count: number } | null;
+      return row ? row.count : 0;
+    })(),
   });
 }
 ```

@@ -1,0 +1,3 @@
+[submodule "openhuman"]
+	path = openhuman
+	url = git@github.com:tinyhumansai/openhuman.git

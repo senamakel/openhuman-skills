@@ -42,3 +42,4 @@ dev/js-harness/**/*.js
 
 # Local model files (large GGUF binaries)
 .models/
+.fastembed_cache/
